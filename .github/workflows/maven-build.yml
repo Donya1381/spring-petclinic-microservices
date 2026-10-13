@@ -94,7 +94,7 @@ jobs:
 
           mvn -B package \
             --file "${{ matrix.service }}/pom.xml" \
-            --settings ./settings.xml
+           
 
       - name: Build Docker image
         run: |
