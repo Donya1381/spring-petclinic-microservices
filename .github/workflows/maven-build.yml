@@ -9,12 +9,9 @@ on:
 
 jobs:
 
-  # --------------------------------------------------
-  # Detect which services have changed
-  # --------------------------------------------------
   detect-changes:
     name: Detect changed services
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     outputs:
       services: ${{ steps.changes.outputs.services }}
@@ -31,7 +28,6 @@ jobs:
         run: |
           SERVICES=()
 
-          # Check each service directory
           for service in \
             spring-petclinic-admin-server \
             spring-petclinic-customers-service \
@@ -50,7 +46,6 @@ jobs:
           echo "Changed services:"
           printf '%s\n' "${SERVICES[@]}"
 
-          # Convert array to JSON
           if [ ${#SERVICES[@]} -eq 0 ]; then
             echo 'services=[]' >> "$GITHUB_OUTPUT"
           else
@@ -58,16 +53,13 @@ jobs:
             echo "services=$JSON" >> "$GITHUB_OUTPUT"
           fi
 
-  # --------------------------------------------------
-  # Build only changed services
-  # --------------------------------------------------
   build:
     name: Build changed service
     needs: detect-changes
 
     if: needs.detect-changes.outputs.services != '[]'
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     strategy:
       matrix:
@@ -84,12 +76,21 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Show version
+      - name: Create version tag
+        id: version
         run: |
+          TAG="${GITHUB_SHA::7}"
+
+          echo "VERSION_TAG=$TAG" >> "$GITHUB_ENV"
+
           echo "Service: ${{ matrix.service }}"
-          echo "Git SHA: $GITHUB_SHA"
+          echo "Version tag: $TAG"
 
       - name: Build service
         run: |
+          echo "Building ${{ matrix.service }}"
+          echo "Version: $VERSION_TAG"
+
           mvn -B package \
-            --file "${{ matrix.service }}/pom.xml"
+            --file "${{ matrix.service }}/pom.xml" \
+            --settings ./settings.xml
