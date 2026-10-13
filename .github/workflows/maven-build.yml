@@ -1,3 +1,4 @@
+```yaml
 name: Java CI with Maven
 
 on:
@@ -53,6 +54,7 @@ jobs:
             echo "services=$JSON" >> "$GITHUB_OUTPUT"
           fi
 
+
   build:
     name: Build changed service
     needs: detect-changes
@@ -70,12 +72,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
+
 
       - name: Create version tag
         id: version
@@ -87,6 +91,7 @@ jobs:
           echo "Service: ${{ matrix.service }}"
           echo "Version tag: $TAG"
 
+
       - name: Build service
         run: |
           echo "Building ${{ matrix.service }}"
@@ -94,7 +99,75 @@ jobs:
 
           mvn -B package \
             --file "${{ matrix.service }}/pom.xml" \
-           
+            --settings ./settings.xml
+
+
+      - name: Set Docker port
+        run: |
+          case "${{ matrix.service }}" in
+
+            spring-petclinic-config-server)
+              PORT=8888
+              ;;
+
+            spring-petclinic-discovery-server)
+              PORT=8761
+              ;;
+
+            spring-petclinic-customers-service)
+              PORT=8081
+              ;;
+
+            spring-petclinic-visits-service)
+              PORT=8082
+              ;;
+
+            spring-petclinic-vets-service)
+              PORT=8083
+              ;;
+
+            spring-petclinic-genai-service)
+              PORT=8084
+              ;;
+
+            spring-petclinic-api-gateway)
+              PORT=8080
+              ;;
+
+            spring-petclinic-admin-server)
+              PORT=9090
+              ;;
+
+            *)
+              echo "Unknown service: ${{ matrix.service }}"
+              exit 1
+              ;;
+
+          esac
+
+          echo "DOCKER_PORT=$PORT" >> "$GITHUB_ENV"
+
+          echo "Service: ${{ matrix.service }}"
+          echo "Docker port: $PORT"
+
+
+      - name: Prepare Docker artifact
+        run: |
+          JAR=$(find "${{ matrix.service }}/target" -maxdepth 1 -name "*.jar" -type f | head -n 1)
+
+          if [ -z "$JAR" ]; then
+            echo "JAR file not found!"
+            exit 1
+          fi
+
+          echo "Found JAR:"
+          echo "$JAR"
+
+          cp "$JAR" "${{ matrix.service }}.jar"
+
+          echo "Docker artifact:"
+          ls -lh "${{ matrix.service }}.jar"
+
 
       - name: Build Docker image
         run: |
@@ -104,8 +177,12 @@ jobs:
           echo "$IMAGE"
 
           docker build \
+            -f docker/Dockerfile \
+            --build-arg ARTIFACT_NAME="${{ matrix.service }}" \
+            --build-arg EXPOSED_PORT="${DOCKER_PORT}" \
             -t "$IMAGE" \
-            "${{ matrix.service }}"
+            .
+
 
       - name: Push Docker image
         run: |
@@ -115,3 +192,10 @@ jobs:
           echo "$IMAGE"
 
           docker push "$IMAGE"
+
+
+      - name: Cleanup Docker artifact
+        if: always()
+        run: |
+          rm -f "${{ matrix.service }}.jar"
+```
