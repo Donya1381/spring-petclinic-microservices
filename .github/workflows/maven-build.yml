@@ -66,6 +66,7 @@ jobs:
         service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -94,3 +95,23 @@ jobs:
           mvn -B package \
             --file "${{ matrix.service }}/pom.xml" \
             --settings ./settings.xml
+
+      - name: Build Docker image
+        run: |
+          IMAGE="192.168.56.114/petclinic-microservice/${{ matrix.service }}:${VERSION_TAG}"
+
+          echo "Building Docker image:"
+          echo "$IMAGE"
+
+          docker build \
+            -t "$IMAGE" \
+            "${{ matrix.service }}"
+
+      - name: Push Docker image
+        run: |
+          IMAGE="192.168.56.114/petclinic-microservice/${{ matrix.service }}:${VERSION_TAG}"
+
+          echo "Pushing Docker image:"
+          echo "$IMAGE"
+
+          docker push "$IMAGE"
