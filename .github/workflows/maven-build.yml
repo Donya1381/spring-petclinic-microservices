@@ -198,3 +198,74 @@ jobs:
         run: |
           rm -f "${{ matrix.service }}.jar"
 
+
+  update-manifest:
+    name: Update image tags in config repo
+    needs: [detect-changes, build]
+
+    # Only on push to main (never on pull requests), and only if something was built
+    if: github.event_name == 'push' && needs.detect-changes.outputs.services != '[]'
+
+    runs-on: self-hosted
+
+    # Prevent two runs from pushing to the config repo at the same time
+    concurrency:
+      group: config-repo-update
+      cancel-in-progress: false
+
+    steps:
+
+      - name: Checkout config repo
+        uses: actions/checkout@v4
+        with:
+          repository: Donya1381/petclinic-argocd
+          token: ${{ secrets.CONFIG_REPO_TOKEN }}
+          ref: main
+          path: config-repo
+
+
+      - name: Bump image tags
+        working-directory: config-repo
+        env:
+          SERVICES: ${{ needs.detect-changes.outputs.services }}
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          REGISTRY="192.168.56.114/petclinic-microservice"
+
+          for service in $(echo "$SERVICES" | jq -r '.[]'); do
+            # spring-petclinic-api-gateway -> api-gateway
+            dir="${service#spring-petclinic-}"
+            file="${dir}/deployment.yaml"
+
+            if [ ! -f "$file" ]; then
+              echo "::warning::$file not found, skipping $service"
+              continue
+            fi
+
+            echo "Updating $service -> $TAG"
+
+            sed -i -E "s|(image:[[:space:]]*${REGISTRY}/${service}):[^[:space:]]+|\1:${TAG}|" "$file"
+
+            # Make sure the tag was really updated
+            if ! grep -q "${REGISTRY}/${service}:${TAG}" "$file"; then
+              echo "::error::Failed to update image tag in $file"
+              exit 1
+            fi
+          done
+
+
+      - name: Commit and push
+        working-directory: config-repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: bump images to ${GITHUB_SHA::7}"
+          git pull --rebase origin main
+          git push origin main
